@@ -1,0 +1,29 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Spottedleaf <Spottedleaf@users.noreply.github.com>
+Date: Wed, 31 Jul 2024 11:27:24 -0700
+Subject: [PATCH] Disable spark profiler
+
+It's not thread-safe. The plugin instead needs to be used.
+
+diff --git a/src/main/java/io/papermc/paper/SparksFly.java b/src/main/java/io/papermc/paper/SparksFly.java
+index 2ad5b9b0b7e18780ee73310451d9fa73f44c4bdb..b332645ed65928100f580221d8a9948bc77e362e 100644
+--- a/src/main/java/io/papermc/paper/SparksFly.java
++++ b/src/main/java/io/papermc/paper/SparksFly.java
+@@ -116,7 +116,7 @@ public final class SparksFly {
+ 
+     private void enable() {
+         if (!this.enabled) {
+-            if (GlobalConfiguration.get().spark.enabled) {
++            if (false) { // Folia - disable in-built spark profiler
+                 this.enabled = true;
+                 this.spark.enable();
+             } else {
+@@ -168,7 +168,7 @@ public final class SparksFly {
+     }
+ 
+     public static boolean isPluginPreferred() {
+-        return Boolean.getBoolean(PREFER_SPARK_PLUGIN_PROPERTY);
++        return true; // Folia - disable in-built spark profiler
+     }
+ 
+     private static boolean isPluginEnabled(final Server server) {

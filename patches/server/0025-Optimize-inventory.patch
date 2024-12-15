@@ -1,0 +1,39 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: =?UTF-8?q?Tofik=20=E2=99=A1?= <slodkitofiK@gmail.com>
+Date: Sat, 14 Dec 2024 19:20:40 +0100
+Subject: [PATCH] Optimize inventory
+
+
+diff --git a/src/main/java/net/minecraft/world/entity/player/Inventory.java b/src/main/java/net/minecraft/world/entity/player/Inventory.java
+index 110456deaa662bc1c0f6ba7878bb3074869a4350..d1e6fed00102c130f5a411e8fd5f735a2f576b04 100644
+--- a/src/main/java/net/minecraft/world/entity/player/Inventory.java
++++ b/src/main/java/net/minecraft/world/entity/player/Inventory.java
+@@ -636,6 +636,8 @@ public class Inventory implements Container, Nameable {
+     }
+ 
+     public boolean contains(ItemStack stack) {
++        // Mizi start - optimize inventory
++        /*
+         Iterator iterator = this.compartments.iterator();
+ 
+         while (iterator.hasNext()) {
+@@ -650,6 +652,19 @@ public class Inventory implements Container, Nameable {
+                 }
+             }
+         }
++            */
++
++                    for (int i = 0; i < this.compartments.size(); i++) {
++                            List<ItemStack> list = this.compartments.get(i);
++                            for (int j = 0; j < list.size(); j++) {
++                                ItemStack itemstack1 = list.get(j);
++                 
++                                if (!itemstack1.isEmpty() && ItemStack.isSameItemSameComponents(itemstack1, stack)) {
++                                    return true;
++                                }
++                            }
++                        }
++                // Mizi end
+ 
+         return false;
+     }

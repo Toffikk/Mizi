@@ -1,0 +1,42 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Spottedleaf <Spottedleaf@users.noreply.github.com>
+Date: Thu, 9 Mar 2023 20:50:15 -0800
+Subject: [PATCH] Max pending logins
+
+Should help the floodgates on launch
+
+diff --git a/src/main/java/net/minecraft/server/network/ServerLoginPacketListenerImpl.java b/src/main/java/net/minecraft/server/network/ServerLoginPacketListenerImpl.java
+index 7fdb9304de7cf1979d57e3fac32415d7c674609d..227d62a69a453d49c28568ecb41ecef85a35405b 100644
+--- a/src/main/java/net/minecraft/server/network/ServerLoginPacketListenerImpl.java
++++ b/src/main/java/net/minecraft/server/network/ServerLoginPacketListenerImpl.java
+@@ -117,7 +117,7 @@ public class ServerLoginPacketListenerImpl implements ServerLoginPacketListener,
+             if (this.server.getPlayerList().pushPendingJoin(name, uniqueId, this.connection)) {
+             // Folia end - region threading - rewrite login process
+             this.verifyLoginAndFinishConnectionSetup((GameProfile) Objects.requireNonNull(this.authenticatedProfile));
+-            } // Paper - prevent logins to be processed even though disconnect was called
++            } else { --this.tick; } // Paper - prevent logins to be processed even though disconnect was called // Folia - max concurrent logins
+         }
+ 
+         // CraftBukkit start
+diff --git a/src/main/java/net/minecraft/server/players/PlayerList.java b/src/main/java/net/minecraft/server/players/PlayerList.java
+index b449de44b1911e2ff0701956bfba53fb5d2ed44e..c1574cdea90731dec4d24b15979209cce0c581af 100644
+--- a/src/main/java/net/minecraft/server/players/PlayerList.java
++++ b/src/main/java/net/minecraft/server/players/PlayerList.java
+@@ -175,6 +175,17 @@ public abstract class PlayerList {
+             conflictingId = this.connectionById.get(byId);
+ 
+             if (conflictingName == null && conflictingId == null) {
++                // Folia start - max concurrent login
++                int loggedInCount = 0;
++                for (Connection value : this.connectionById.values()) {
++                    if (value.getPacketListener() instanceof ServerGamePacketListenerImpl) {
++                        ++loggedInCount;
++                    }
++                }
++                if ((this.connectionById.size() - loggedInCount) >= io.papermc.paper.configuration.GlobalConfiguration.get().misc.maxJoinsPerTick) {
++                    return false;
++                }
++                // Folia end - max concurrent login
+                 this.connectionByName.put(userName, conn);
+                 this.connectionById.put(byId, conn);
+             }

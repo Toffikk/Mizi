@@ -1,0 +1,33 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: =?UTF-8?q?Tofik=20=E2=99=A1?= <slodkitofiK@gmail.com>
+Date: Sun, 15 Dec 2024 01:42:09 +0100
+Subject: [PATCH] Remove lambda from ticking guard
+
+
+diff --git a/src/main/java/net/minecraft/server/level/ServerLevel.java b/src/main/java/net/minecraft/server/level/ServerLevel.java
+index 7fe2f795aaa28ba9b8eb8237786341c895ae7aad..0c3462524592be7e19a66519cb6a87cbb554b970 100644
+--- a/src/main/java/net/minecraft/server/level/ServerLevel.java
++++ b/src/main/java/net/minecraft/server/level/ServerLevel.java
+@@ -834,7 +834,21 @@ public class ServerLevel extends Level implements ServerEntityGetter, WorldGenLe
+                             }
+ 
+                             gameprofilerfiller.push("tick");
+-                            this.guardEntityTick(this::tickNonPassenger, entity);
++                            // this.guardEntityTick(this::tickNonPassenger, entity);
++                            // Pufferfish start - copied from this.guardEntityTick
++                            try {
++                                this.tickNonPassenger(entity); // Pufferfish - changed
++                            } catch (Throwable throwable) {
++                                if (throwable instanceof ThreadDeath) throw throwable; // Paper
++                                // Paper start - Prevent tile entity and entity crashes
++                                final String msg = String.format("Entity threw exception at %s:%s,%s,%s", entity.level().getWorld().getName(), entity.getX(), entity.getY(), entity.getZ());
++                                MinecraftServer.LOGGER.error(msg, throwable);
++                                getCraftServer().getPluginManager().callEvent(new com.destroystokyo.paper.event.server.ServerExceptionEvent(new com.destroystokyo.paper.exception.ServerInternalException(msg, throwable)));
++                                entity.discard(org.bukkit.event.entity.EntityRemoveEvent.Cause.DISCARD);
++                                // Paper end
++                            }
++                            this.moonrise$midTickTasks(); // Paper - rewrite chunk system
++                            // Pufferfish end
+                             gameprofilerfiller.pop();
+                         }
+                     }

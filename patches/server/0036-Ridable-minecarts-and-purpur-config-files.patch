@@ -1,0 +1,613 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: =?UTF-8?q?Tofik=20=E2=99=A1?= <slodkitofiK@gmail.com>
+Date: Sun, 15 Dec 2024 02:41:14 +0100
+Subject: [PATCH] Ridable minecarts and purpur config files
+
+
+diff --git a/src/main/java/net/minecraft/server/dedicated/DedicatedServer.java b/src/main/java/net/minecraft/server/dedicated/DedicatedServer.java
+index 37ba02b14791d59f8086af0bce14d7984f80d40d..7a01e6e936996ff63b9ef160ae7909e0d05bb566 100644
+--- a/src/main/java/net/minecraft/server/dedicated/DedicatedServer.java
++++ b/src/main/java/net/minecraft/server/dedicated/DedicatedServer.java
+@@ -237,6 +237,12 @@ public class DedicatedServer extends MinecraftServer implements ServerInterface
+         com.destroystokyo.paper.Metrics.PaperMetrics.startMetrics(); // Paper - start metrics
+         com.destroystokyo.paper.VersionHistoryManager.INSTANCE.getClass(); // Paper - load version history now
+         gg.pufferfish.pufferfish.PufferfishConfig.load(); // Pufferfish // Mizi
++        try {
++            org.purpurmc.purpur.PurpurConfig.init((java.io.File) options.valueOf("purpur-settings"));
++               } catch (Exception e) {
++                    DedicatedServer.LOGGER.error("Unable to load server configuration", e);
++                    return false;
++                }
+ 
+         this.setPvpAllowed(dedicatedserverproperties.pvp);
+         this.setFlightAllowed(dedicatedserverproperties.allowFlight);
+diff --git a/src/main/java/net/minecraft/server/level/ServerPlayer.java b/src/main/java/net/minecraft/server/level/ServerPlayer.java
+index 23f852ede94bce4d000c8fcaa8fba5d4800b533c..31cd71e7dfb5f884d6b11804f20c0bcd303cb2f9 100644
+--- a/src/main/java/net/minecraft/server/level/ServerPlayer.java
++++ b/src/main/java/net/minecraft/server/level/ServerPlayer.java
+@@ -1583,6 +1583,7 @@ public class ServerPlayer extends net.minecraft.world.entity.player.Player imple
+         if (this.isInvulnerableTo(world, source)) {
+             return false;
+         } else {
++            if (source.is(net.minecraft.tags.DamageTypeTags.IS_FALL) && getRootVehicle() instanceof net.minecraft.world.entity.vehicle.AbstractMinecart && level().purpurConfig.minecartControllable && !level().purpurConfig.minecartControllableFallDamage) return false; // Purpur
+             Entity entity = source.getEntity();
+ 
+             if (entity instanceof net.minecraft.world.entity.player.Player) {
+diff --git a/src/main/java/net/minecraft/world/entity/Entity.java b/src/main/java/net/minecraft/world/entity/Entity.java
+index b0d78bf8018a0ed509d5f3572a6342fcf0035a09..2a34f9c81b4b18d26387d2286d167b06556d2025 100644
+--- a/src/main/java/net/minecraft/world/entity/Entity.java
++++ b/src/main/java/net/minecraft/world/entity/Entity.java
+@@ -301,6 +301,7 @@ public abstract class Entity implements SyncedDataHolder, Nameable, EntityAccess
+     public double xOld;
+     public double yOld;
+     public double zOld;
++    public float maxUpStep; // Purpur
+     public boolean noPhysics;
+     private boolean wasOnFire;
+     public final RandomSource random;
+@@ -5958,7 +5959,7 @@ public abstract class Entity implements SyncedDataHolder, Nameable, EntityAccess
+     }
+ 
+     public float maxUpStep() {
+-        return 0.0F;
++        return maxUpStep;
+     }
+ 
+     public void onExplosionHit(@Nullable Entity entity) {}
+diff --git a/src/main/java/net/minecraft/world/entity/vehicle/AbstractMinecart.java b/src/main/java/net/minecraft/world/entity/vehicle/AbstractMinecart.java
+index cdc8606ffe5c75ee19d92e9f86f26b2a502d765e..5cbf40b9595c4cc4b9d8446562ebcfac9e01fcdc 100644
+--- a/src/main/java/net/minecraft/world/entity/vehicle/AbstractMinecart.java
++++ b/src/main/java/net/minecraft/world/entity/vehicle/AbstractMinecart.java
+@@ -92,6 +92,10 @@ public abstract class AbstractMinecart extends VehicleEntity {
+     private double flyingY = 0.95;
+     private double flyingZ = 0.95;
+     public Double maxSpeed;
++    // Purpur start
++    public double storedMaxSpeed;
++    public boolean isNewBehavior;
++    // Purpur end
+     // CraftBukkit end
+     public net.kyori.adventure.util.TriState frictionState = net.kyori.adventure.util.TriState.NOT_SET; // Paper - Friction API
+ 
+@@ -100,8 +104,13 @@ public abstract class AbstractMinecart extends VehicleEntity {
+         this.blocksBuilding = true;
+         if (AbstractMinecart.useExperimentalMovement(world)) {
+             this.behavior = new NewMinecartBehavior(this);
++            this.isNewBehavior = true; // Purpur
+         } else {
+             this.behavior = new OldMinecartBehavior(this);
++            // Purpur start
++            this.isNewBehavior = false;
++            maxSpeed = storedMaxSpeed = world.purpurConfig.minecartMaxSpeed;
++            // Purpur end
+         }
+ 
+     }
+@@ -289,6 +298,13 @@ public abstract class AbstractMinecart extends VehicleEntity {
+ 
+     @Override
+     public void tick() {
++        // Purpur start
++        if (!this.isNewBehavior) {
++            if (storedMaxSpeed != level().purpurConfig.minecartMaxSpeed) {
++                maxSpeed = storedMaxSpeed = level().purpurConfig.minecartMaxSpeed;
++            }
++        }
++        // Purpur end
+         // CraftBukkit start
+         double prevX = this.getX();
+         double prevY = this.getY();
+@@ -426,17 +442,60 @@ public abstract class AbstractMinecart extends VehicleEntity {
+         this.behavior.moveAlongTrack(world);
+     }
+ 
++    // Purpur start
++    private Double lastSpeed;
++
++    public double getControllableSpeed() {
++        BlockState blockState = level().getBlockState(this.blockPosition());
++        if (!blockState.isSolid()) {
++            blockState = level().getBlockState(this.blockPosition().relative(Direction.DOWN));
++        }
++        Double speed = level().purpurConfig.minecartControllableBlockSpeeds.get(blockState.getBlock());
++        if (!blockState.isSolid()) {
++            speed = lastSpeed;
++        }
++        if (speed == null) {
++            speed = level().purpurConfig.minecartControllableBaseSpeed;
++        }
++        return lastSpeed = speed;
++    }
++    // Purpur end
++
+     protected void comeOffTrack(ServerLevel world) {
+         double d0 = this.getMaxSpeed(world);
+         Vec3 vec3d = this.getDeltaMovement();
+ 
+         this.setDeltaMovement(Mth.clamp(vec3d.x, -d0, d0), vec3d.y, Mth.clamp(vec3d.z, -d0, d0));
++        // Purpur start
++        if (level().purpurConfig.minecartControllable && !isInWater() && !isInLava() && !passengers.isEmpty()) {
++            Entity passenger = passengers.get(0);
++            if (passenger instanceof Player) {
++                Player player = (Player) passenger;
++                if (player.jumping && this.onGround) {
++                    setDeltaMovement(new Vec3(getDeltaMovement().x, level().purpurConfig.minecartControllableHopBoost, getDeltaMovement().z));
++                }
++                if (player.zza != 0.0F) {
++                    Vector velocity = player.getBukkitEntity().getEyeLocation().getDirection().normalize().multiply(getControllableSpeed());
++                    if (player.zza < 0.0) {
++                        velocity.multiply(-0.5);
++                    }
++                    setDeltaMovement(new Vec3(velocity.getX(), getDeltaMovement().y, velocity.getZ()));
++                }
++                this.setYRot(passenger.getYRot() - 90);
++                maxUpStep = level().purpurConfig.minecartControllableStepHeight;
++            } else {
++                maxUpStep = 0.0F;
++            }
++        } else {
++            maxUpStep = 0.0F;
++        }
++        // Purpur end
+         if (this.onGround()) {
+             // CraftBukkit start - replace magic numbers with our variables
+             this.setDeltaMovement(new Vec3(this.getDeltaMovement().x * this.derailedX, this.getDeltaMovement().y * this.derailedY, this.getDeltaMovement().z * this.derailedZ));
+             // CraftBukkit end
+         }
+-
++        else if (level().purpurConfig.minecartControllable) setDeltaMovement(new Vec3(getDeltaMovement().x * derailedX, getDeltaMovement().y, getDeltaMovement().z * derailedZ)); // Purpur
+         this.move(MoverType.SELF, this.getDeltaMovement());
+         if (!this.onGround()) {
+             // CraftBukkit start - replace magic numbers with our variables
+diff --git a/src/main/java/net/minecraft/world/item/MinecartItem.java b/src/main/java/net/minecraft/world/item/MinecartItem.java
+index 7153d9ed12276a0f2d8b8a17c79734aa25ed1fa5..b9b8bdb20776a18eb2cc353f736dc875afde9d44 100644
+--- a/src/main/java/net/minecraft/world/item/MinecartItem.java
++++ b/src/main/java/net/minecraft/world/item/MinecartItem.java
+@@ -35,8 +35,10 @@ public class MinecartItem extends Item {
+         BlockState iblockdata = world.getBlockState(blockposition);
+ 
+         if (!iblockdata.is(BlockTags.RAILS)) {
+-            return InteractionResult.FAIL;
+-        } else {
++            // return InteractionResult.FAIL;
++            if (!world.purpurConfig.minecartPlaceAnywhere) return InteractionResult.FAIL; // Purpur
++            if (iblockdata.isSolid()) blockposition = blockposition.relative(context.getClickedFace());
++        } // else { // Purpur - place minecarts anywhere
+             ItemStack itemstack = context.getItemInHand();
+             RailShape blockpropertytrackposition = iblockdata.getBlock() instanceof BaseRailBlock ? (RailShape) iblockdata.getValue(((BaseRailBlock) iblockdata.getBlock()).getShapeProperty()) : RailShape.NORTH_SOUTH;
+             double d0 = 0.0D;
+@@ -80,6 +82,6 @@ public class MinecartItem extends Item {
+                 itemstack.shrink(1);
+                 return InteractionResult.SUCCESS;
+             }
+-        }
++        // } // Purpur - place minecarts anywhere
+     }
+ }
+diff --git a/src/main/java/net/minecraft/world/level/Level.java b/src/main/java/net/minecraft/world/level/Level.java
+index 456f15e44e41d65338c0346594be2b0042b84005..9fa46f5b634d97786a11414790143c42eaac8b6d 100644
+--- a/src/main/java/net/minecraft/world/level/Level.java
++++ b/src/main/java/net/minecraft/world/level/Level.java
+@@ -167,6 +167,7 @@ public abstract class Level implements LevelAccessor, AutoCloseable, ca.spottedl
+     public static BlockPos lastPhysicsProblem; // Spigot
+     private org.spigotmc.TickLimiter entityLimiter;
+     private org.spigotmc.TickLimiter tileLimiter;
++    public final org.purpurmc.purpur.PurpurWorldConfig purpurConfig; // Purpur
+     //private int tileTickPosition; // Folia - region threading
+     //public final Map<ServerExplosion.CacheKey, Float> explosionDensityCache = new HashMap<>(); // Paper - Optimize explosions // Folia - region threading
+     //public java.util.ArrayDeque<net.minecraft.world.level.block.RedstoneTorchBlock.Toggle> redstoneUpdateInfos; // Paper - Faster redstone torch rapid clock removal; Move from Map in BlockRedstoneTorch to here // Folia - region threading
+@@ -861,6 +862,7 @@ public abstract class Level implements LevelAccessor, AutoCloseable, ca.spottedl
+         // Paper end - getblock optimisations - cache world height/sections
+         this.spigotConfig = new org.spigotmc.SpigotWorldConfig(((net.minecraft.world.level.storage.PrimaryLevelData) worlddatamutable).getLevelName()); // Spigot
+         this.paperConfig = paperWorldConfigCreator.apply(this.spigotConfig); // Paper - create paper world config
++        this.purpurConfig = new org.purpurmc.purpur.PurpurWorldConfig(((net.minecraft.world.level.storage.PrimaryLevelData) worlddatamutable).getLevelName(), env); // Purpur
+         this.generator = gen;
+         this.world = new CraftWorld((ServerLevel) this, gen, biomeProvider, env);
+ 
+diff --git a/src/main/java/net/minecraft/world/level/block/state/BlockBehaviour.java b/src/main/java/net/minecraft/world/level/block/state/BlockBehaviour.java
+index 8c0f332a1a0918f60226d969918ae7fe4fe74166..705024f8ebf8b53fd1b957632ff56314ae099226 100644
+--- a/src/main/java/net/minecraft/world/level/block/state/BlockBehaviour.java
++++ b/src/main/java/net/minecraft/world/level/block/state/BlockBehaviour.java
+@@ -99,7 +99,7 @@ public abstract class BlockBehaviour implements FeatureElement {
+     protected final float jumpFactor;
+     protected final boolean dynamicShape;
+     protected final FeatureFlagSet requiredFeatures;
+-    protected final BlockBehaviour.Properties properties;
++    public final BlockBehaviour.Properties properties;
+     protected final Optional<ResourceKey<LootTable>> drops;
+     protected final String descriptionId;
+ 
+diff --git a/src/main/java/org/bukkit/craftbukkit/CraftServer.java b/src/main/java/org/bukkit/craftbukkit/CraftServer.java
+index 567e12e24ece2cd823b73e7337b10eb89995da21..e497fa74b9be44e732d1b89b682db26b80ff68b3 100644
+--- a/src/main/java/org/bukkit/craftbukkit/CraftServer.java
++++ b/src/main/java/org/bukkit/craftbukkit/CraftServer.java
+@@ -1123,6 +1123,7 @@ public final class CraftServer implements Server {
+ 
+         org.spigotmc.SpigotConfig.init((File) this.console.options.valueOf("spigot-settings")); // Spigot
+         this.console.paperConfigurations.reloadConfigs(this.console);
++        org.purpurmc.purpur.PurpurConfig.init((File) console.options.valueOf("purpur-settings")); // Purpur
+         for (ServerLevel world : this.console.getAllLevels()) {
+             // world.serverLevelData.setDifficulty(config.difficulty); // Paper - per level difficulty
+             world.setSpawnSettings(world.serverLevelData.getDifficulty() != Difficulty.PEACEFUL && config.spawnMonsters); // Paper - per level difficulty (from MinecraftServer#setDifficulty(ServerLevel, Difficulty, boolean))
+@@ -1138,6 +1139,7 @@ public final class CraftServer implements Server {
+                 }
+             }
+             world.spigotConfig.init(); // Spigot
++            world.purpurConfig.init(); // Purpur
+         }
+ 
+         Plugin[] pluginClone = pluginManager.getPlugins().clone(); // Paper
+@@ -3070,6 +3072,18 @@ public final class CraftServer implements Server {
+             return CraftServer.this.console.paperConfigurations.createLegacyObject(CraftServer.this.console);
+         }
+ 
++        // Purpur start
++        @Override
++        public YamlConfiguration getPurpurConfig() {
++            return org.purpurmc.purpur.PurpurConfig.config;
++        }
++
++        @Override
++        public java.util.Properties getServerProperties() {
++            return getProperties().properties;
++        }
++        // Purpur end
++
+         @Override
+         public void restart() {
+             org.spigotmc.RestartCommand.restart();
+diff --git a/src/main/java/org/bukkit/craftbukkit/Main.java b/src/main/java/org/bukkit/craftbukkit/Main.java
+index 1c2439ffc1e407ff69286817d22f127470ce07ba..d0f5adecbe252a2e87b11379df6f460f1acbac17 100644
+--- a/src/main/java/org/bukkit/craftbukkit/Main.java
++++ b/src/main/java/org/bukkit/craftbukkit/Main.java
+@@ -175,7 +175,13 @@ public class Main {
+                         .defaultsTo(new File[] {})
+                         .describedAs("Jar file");
+                 // Paper end
+-
++                // Purpur Start
++                acceptsAll(asList("purpur", "purpur-settings"), "File for purpur settings")
++                        .withRequiredArg()
++                        .ofType(File.class)
++                        .defaultsTo(new File("purpur.yml"))
++                        .describedAs("Yml file");
++                // Purpur end
+                 // Paper start
+                 acceptsAll(asList("server-name"), "Name of the server")
+                         .withRequiredArg()
+diff --git a/src/main/java/org/purpurmc/purpur/PurpurConfig.java b/src/main/java/org/purpurmc/purpur/PurpurConfig.java
+new file mode 100644
+index 0000000000000000000000000000000000000000..ec6b7e0704ecc15372132bf1dce8a0675ac54396
+--- /dev/null
++++ b/src/main/java/org/purpurmc/purpur/PurpurConfig.java
+@@ -0,0 +1,175 @@
++package org.purpurmc.purpur;
++
++import com.google.common.base.Throwables;
++import com.google.common.collect.ImmutableMap;
++import com.mojang.datafixers.util.Pair;
++import net.kyori.adventure.bossbar.BossBar;
++import net.kyori.adventure.text.minimessage.MiniMessage;
++import net.minecraft.core.Registry;
++import net.minecraft.core.registries.BuiltInRegistries;
++import net.minecraft.core.registries.Registries;
++import net.minecraft.resources.ResourceLocation;
++import net.minecraft.server.MinecraftServer;
++import net.minecraft.world.effect.MobEffect;
++import net.minecraft.world.effect.MobEffectInstance;
++import net.minecraft.world.entity.EntityDimensions;
++import net.minecraft.world.entity.EntityType;
++import net.minecraft.world.food.FoodProperties;
++import net.minecraft.world.food.Foods;
++import net.minecraft.world.item.enchantment.Enchantment;
++import net.minecraft.world.level.block.Block;
++import net.minecraft.world.level.block.Blocks;
++import net.minecraft.world.level.block.state.BlockBehaviour;
++import org.bukkit.Bukkit;
++import org.bukkit.command.Command;
++import org.bukkit.configuration.ConfigurationSection;
++import org.bukkit.configuration.InvalidConfigurationException;
++import org.bukkit.configuration.file.YamlConfiguration;
++
++import java.io.File;
++import java.io.IOException;
++import java.lang.reflect.InvocationTargetException;
++import java.lang.reflect.Method;
++import java.lang.reflect.Modifier;
++import java.util.ArrayList;
++import java.util.Collections;
++import java.util.HashMap;
++import java.util.HashSet;
++import java.util.List;
++import java.util.Map;
++import java.util.Set;
++import java.util.logging.Level;
++
++@SuppressWarnings("unused")
++public class PurpurConfig {
++    private static final String HEADER = "This is the main configuration file for Purpur.\n"
++            + "As you can see, there's tons to configure. Some options may impact gameplay, so use\n"
++            + "with caution, and make sure you know what each option does before configuring.\n"
++            + "\n"
++            + "If you need help with the configuration or have any questions related to Purpur,\n"
++            + "join us in our Discord guild.\n"
++            + "\n"
++            + "Website: https://purpurmc.org \n"
++            + "Docs: https://purpurmc.org/docs \n";
++    private static File CONFIG_FILE;
++    public static YamlConfiguration config;
++
++    private static Map<String, Command> commands;
++
++    public static int version;
++    static boolean verbose;
++
++    public static void init(File configFile) {
++        CONFIG_FILE = configFile;
++        config = new YamlConfiguration();
++        try {
++            config.load(CONFIG_FILE);
++        } catch (IOException ignore) {
++        } catch (InvalidConfigurationException ex) {
++            Bukkit.getLogger().log(Level.SEVERE, "Could not load purpur.yml, please correct your syntax errors", ex);
++            throw Throwables.propagate(ex);
++        }
++        config.options().header(HEADER);
++        config.options().copyDefaults(true);
++        verbose = getBoolean("verbose", false);
++
++        commands = new HashMap<>();
++
++        version = getInt("config-version", 38);
++        set("config-version", 38);
++
++        readConfig(PurpurConfig.class, null);
++
++        Block.BLOCK_STATE_REGISTRY.forEach(BlockBehaviour.BlockStateBase::initCache);
++    }
++
++    protected static void log(String s) {
++        if (verbose) {
++            log(Level.INFO, s);
++        }
++    }
++
++    protected static void log(Level level, String s) {
++        Bukkit.getLogger().log(level, s);
++    }
++
++    public static void registerCommands() {
++        for (Map.Entry<String, Command> entry : commands.entrySet()) {
++            MinecraftServer.getServer().server.getCommandMap().register(entry.getKey(), "Purpur", entry.getValue());
++        }
++    }
++
++    static void readConfig(Class<?> clazz, Object instance) {
++        for (Method method : clazz.getDeclaredMethods()) {
++            if (Modifier.isPrivate(method.getModifiers())) {
++                if (method.getParameterTypes().length == 0 && method.getReturnType() == Void.TYPE) {
++                    try {
++                        method.setAccessible(true);
++                        method.invoke(instance);
++                    } catch (InvocationTargetException ex) {
++                        throw Throwables.propagate(ex.getCause());
++                    } catch (Exception ex) {
++                        Bukkit.getLogger().log(Level.SEVERE, "Error invoking " + method, ex);
++                    }
++                }
++            }
++        }
++
++        try {
++            config.save(CONFIG_FILE);
++        } catch (IOException ex) {
++            Bukkit.getLogger().log(Level.SEVERE, "Could not save " + CONFIG_FILE, ex);
++        }
++    }
++
++    private static void set(String path, Object val) {
++        config.addDefault(path, val);
++        config.set(path, val);
++    }
++
++    private static String getString(String path, String def) {
++        config.addDefault(path, def);
++        return config.getString(path, config.getString(path));
++    }
++
++    private static boolean getBoolean(String path, boolean def) {
++        config.addDefault(path, def);
++        return config.getBoolean(path, config.getBoolean(path));
++    }
++
++    private static double getDouble(String path, double def) {
++        config.addDefault(path, def);
++        return config.getDouble(path, config.getDouble(path));
++    }
++
++    private static int getInt(String path, int def) {
++        config.addDefault(path, def);
++        return config.getInt(path, config.getInt(path));
++    }
++
++    private static <T> List<?> getList(String path, T def) {
++        config.addDefault(path, def);
++        return config.getList(path, config.getList(path));
++    }
++
++    static Map<String, Object> getMap(String path, Map<String, Object> def) {
++        if (def != null && config.getConfigurationSection(path) == null) {
++            config.addDefault(path, def);
++            return def;
++        }
++        return toMap(config.getConfigurationSection(path));
++    }
++
++    private static Map<String, Object> toMap(ConfigurationSection section) {
++        ImmutableMap.Builder<String, Object> builder = ImmutableMap.builder();
++        if (section != null) {
++            for (String key : section.getKeys(false)) {
++                Object obj = section.get(key);
++                if (obj != null) {
++                    builder.put(key, obj instanceof ConfigurationSection val ? toMap(val) : obj);
++                }
++            }
++        }
++        return builder.build();
++    }
++}
+diff --git a/src/main/java/org/purpurmc/purpur/PurpurWorldConfig.java b/src/main/java/org/purpurmc/purpur/PurpurWorldConfig.java
+new file mode 100644
+index 0000000000000000000000000000000000000000..1a9a8d905ae2faa1677c54772d54ce04d7f73fb9
+--- /dev/null
++++ b/src/main/java/org/purpurmc/purpur/PurpurWorldConfig.java
+@@ -0,0 +1,149 @@
++package org.purpurmc.purpur;
++
++import net.minecraft.core.registries.BuiltInRegistries;
++import net.minecraft.resources.ResourceLocation;
++import net.minecraft.util.Mth;
++import net.minecraft.world.entity.Entity;
++import net.minecraft.world.entity.EntityType;
++import net.minecraft.world.entity.monster.Shulker;
++import net.minecraft.world.item.DyeColor;
++import net.minecraft.world.item.Item;
++import net.minecraft.world.item.Items;
++import net.minecraft.world.level.block.Block;
++import net.minecraft.world.level.block.Blocks;
++import net.minecraft.world.level.block.state.properties.Tilt;
++import org.apache.commons.lang.BooleanUtils;
++import org.bukkit.ChatColor;
++import org.bukkit.World;
++import org.bukkit.configuration.ConfigurationSection;
++import java.util.ArrayList;
++import java.util.HashMap;
++import java.util.List;
++import java.util.Map;
++import java.util.function.Predicate;
++import java.util.logging.Level;
++import static org.purpurmc.purpur.PurpurConfig.log;
++
++@SuppressWarnings("unused")
++public class PurpurWorldConfig {
++
++    private final String worldName;
++    private final World.Environment environment;
++
++    public PurpurWorldConfig(String worldName, World.Environment environment) {
++        this.worldName = worldName;
++        this.environment = environment;
++        init();
++    }
++
++    public void init() {
++        log("-------- World Settings For [" + worldName + "] --------");
++        PurpurConfig.readConfig(PurpurWorldConfig.class, this);
++    }
++
++    private void set(String path, Object val) {
++        PurpurConfig.config.addDefault("world-settings.default." + path, val);
++        PurpurConfig.config.set("world-settings.default." + path, val);
++        if (PurpurConfig.config.get("world-settings." + worldName + "." + path) != null) {
++            PurpurConfig.config.addDefault("world-settings." + worldName + "." + path, val);
++            PurpurConfig.config.set("world-settings." + worldName + "." + path, val);
++        }
++    }
++
++    private ConfigurationSection getConfigurationSection(String path) {
++        ConfigurationSection section = PurpurConfig.config.getConfigurationSection("world-settings." + worldName + "." + path);
++        return section != null ? section : PurpurConfig.config.getConfigurationSection("world-settings.default." + path);
++    }
++
++    private String getString(String path, String def) {
++        PurpurConfig.config.addDefault("world-settings.default." + path, def);
++        return PurpurConfig.config.getString("world-settings." + worldName + "." + path, PurpurConfig.config.getString("world-settings.default." + path));
++    }
++
++    private boolean getBoolean(String path, boolean def) {
++        PurpurConfig.config.addDefault("world-settings.default." + path, def);
++        return PurpurConfig.config.getBoolean("world-settings." + worldName + "." + path, PurpurConfig.config.getBoolean("world-settings.default." + path));
++    }
++
++    private double getDouble(String path, double def) {
++        PurpurConfig.config.addDefault("world-settings.default." + path, def);
++        return PurpurConfig.config.getDouble("world-settings." + worldName + "." + path, PurpurConfig.config.getDouble("world-settings.default." + path));
++    }
++
++    private int getInt(String path, int def) {
++        PurpurConfig.config.addDefault("world-settings.default." + path, def);
++        return PurpurConfig.config.getInt("world-settings." + worldName + "." + path, PurpurConfig.config.getInt("world-settings.default." + path));
++    }
++
++    private <T> List<?> getList(String path, T def) {
++        PurpurConfig.config.addDefault("world-settings.default." + path, def);
++        return PurpurConfig.config.getList("world-settings." + worldName + "." + path, PurpurConfig.config.getList("world-settings.default." + path));
++    }
++
++    private Map<String, Object> getMap(String path, Map<String, Object> def) {
++        final Map<String, Object> fallback = PurpurConfig.getMap("world-settings.default." + path, def);
++        final Map<String, Object> value = PurpurConfig.getMap("world-settings." + worldName + "." + path, null);
++        return value.isEmpty() ? fallback : value;
++    }
++    public double minecartMaxSpeed = 0.4D;
++    public boolean minecartPlaceAnywhere = false;
++    public boolean minecartControllable = false;
++    public float minecartControllableStepHeight = 1.0F;
++    public double minecartControllableHopBoost = 0.5D;
++    public boolean minecartControllableFallDamage = true;
++    public double minecartControllableBaseSpeed = 0.1D;
++    public Map<Block, Double> minecartControllableBlockSpeeds = new HashMap<>();
++    private void minecartSettings() {
++        if (PurpurConfig.version < 12) {
++            boolean oldBool = getBoolean("gameplay-mechanics.controllable-minecarts.place-anywhere", minecartPlaceAnywhere);
++            set("gameplay-mechanics.controllable-minecarts.place-anywhere", null);
++            set("gameplay-mechanics.minecart.place-anywhere", oldBool);
++            oldBool = getBoolean("gameplay-mechanics.controllable-minecarts.enabled", minecartControllable);
++            set("gameplay-mechanics.controllable-minecarts.enabled", null);
++            set("gameplay-mechanics.minecart.controllable.enabled", oldBool);
++            double oldDouble = getDouble("gameplay-mechanics.controllable-minecarts.step-height", minecartControllableStepHeight);
++            set("gameplay-mechanics.controllable-minecarts.step-height", null);
++            set("gameplay-mechanics.minecart.controllable.step-height", oldDouble);
++            oldDouble = getDouble("gameplay-mechanics.controllable-minecarts.hop-boost", minecartControllableHopBoost);
++            set("gameplay-mechanics.controllable-minecarts.hop-boost", null);
++            set("gameplay-mechanics.minecart.controllable.hop-boost", oldDouble);
++            oldBool = getBoolean("gameplay-mechanics.controllable-minecarts.fall-damage", minecartControllableFallDamage);
++            set("gameplay-mechanics.controllable-minecarts.fall-damage", null);
++            set("gameplay-mechanics.minecart.controllable.fall-damage", oldBool);
++            oldDouble = getDouble("gameplay-mechanics.controllable-minecarts.base-speed", minecartControllableBaseSpeed);
++            set("gameplay-mechanics.controllable-minecarts.base-speed", null);
++            set("gameplay-mechanics.minecart.controllable.base-speed", oldDouble);
++            ConfigurationSection section = getConfigurationSection("gameplay-mechanics.controllable-minecarts.block-speed");
++            if (section != null) {
++                for (String key : section.getKeys(false)) {
++                    if ("grass-block".equals(key)) key = "grass_block"; // oopsie
++                    oldDouble = section.getDouble(key, minecartControllableBaseSpeed);
++                    set("gameplay-mechanics.controllable-minecarts.block-speed." + key, null);
++                    set("gameplay-mechanics.minecart.controllable.block-speed." + key, oldDouble);
++                }
++                set("gameplay-mechanics.controllable-minecarts.block-speed", null);
++            }
++            set("gameplay-mechanics.controllable-minecarts", null);
++        }
++
++        minecartMaxSpeed = getDouble("gameplay-mechanics.minecart.max-speed", minecartMaxSpeed);
++        minecartPlaceAnywhere = getBoolean("gameplay-mechanics.minecart.place-anywhere", minecartPlaceAnywhere);
++        minecartControllable = getBoolean("gameplay-mechanics.minecart.controllable.enabled", minecartControllable);
++        minecartControllableStepHeight = (float) getDouble("gameplay-mechanics.minecart.controllable.step-height", minecartControllableStepHeight);
++        minecartControllableHopBoost = getDouble("gameplay-mechanics.minecart.controllable.hop-boost", minecartControllableHopBoost);
++        minecartControllableFallDamage = getBoolean("gameplay-mechanics.minecart.controllable.fall-damage", minecartControllableFallDamage);
++        minecartControllableBaseSpeed = getDouble("gameplay-mechanics.minecart.controllable.base-speed", minecartControllableBaseSpeed);
++        ConfigurationSection section = getConfigurationSection("gameplay-mechanics.minecart.controllable.block-speed");
++        if (section != null) {
++            for (String key : section.getKeys(false)) {
++                Block block = BuiltInRegistries.BLOCK.getValue(ResourceLocation.parse(key));
++                if (block != Blocks.AIR) {
++                    minecartControllableBlockSpeeds.put(block, section.getDouble(key, minecartControllableBaseSpeed));
++                }
++            }
++        } else {
++            set("gameplay-mechanics.minecart.controllable.block-speed.grass_block", 0.3D);
++            set("gameplay-mechanics.minecart.controllable.block-speed.stone", 0.5D);
++        }
++    }
++}

@@ -1,0 +1,50 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: =?UTF-8?q?Tofik=20=E2=99=A1?= <slodkitofiK@gmail.com>
+Date: Sat, 14 Dec 2024 06:42:32 +0100
+Subject: [PATCH] Add necessary YAML dependency
+
+
+diff --git a/build.gradle.kts b/build.gradle.kts
+index a404088c7da76e8d05ef506b57fd78345c11b3ce..f513ce1e423e3cdaf93bfe0500f54cf71dac0dea 100644
+--- a/build.gradle.kts
++++ b/build.gradle.kts
+@@ -11,6 +11,15 @@ configurations.named(log4jPlugins.compileClasspathConfigurationName) {
+     extendsFrom(configurations.compileClasspath.get())
+ }
+ val alsoShade: Configuration by configurations.creating
++val paperMavenPublicUrl = "https://repo.papermc.io/repository/maven-public/"
++
++repositories {
++    mavenCentral()
++    maven("https://jitpack.io")
++    maven(paperMavenPublicUrl)
++}
++
++
+ 
+ // Paper start - configure mockito agent that is needed in newer java versions
+ val mockitoAgent = configurations.register("mockitoAgent")
+@@ -25,6 +34,10 @@ abstract class MockitoAgentProvider : CommandLineArgumentProvider {
+ // Paper end - configure mockito agent that is needed in newer java versions
+ 
+ dependencies {
++    implementation("org.yaml:snakeyaml:1.32")
++    implementation ("me.carleslc.Simple-YAML:Simple-Yaml:1.8.4") {
++        exclude(group="org.yaml", module="snakeyaml")
++    }
+     implementation(project(":mizi-api")) // Mizi
+     implementation("ca.spottedleaf:concurrentutil:0.0.2") // Paper - Add ConcurrentUtil dependency
+     // Paper start
+@@ -61,6 +74,12 @@ dependencies {
+     runtimeOnly("org.apache.maven.resolver:maven-resolver-connector-basic:1.9.18")
+     runtimeOnly("org.apache.maven.resolver:maven-resolver-transport-http:1.9.18")
+ 
++    // Pufferfish start
++    implementation("org.yaml:snakeyaml:1.32")
++    implementation ("me.carleslc.Simple-YAML:Simple-Yaml:1.8.4") {
++        exclude(group="org.yaml", module="snakeyaml")
++    }
++    // Pufferfish end
+     testImplementation("io.github.classgraph:classgraph:4.8.47") // Paper - mob goal test
+     testImplementation("org.junit.jupiter:junit-jupiter:5.10.2")
+     testImplementation("org.junit.platform:junit-platform-suite-engine:1.10.0")

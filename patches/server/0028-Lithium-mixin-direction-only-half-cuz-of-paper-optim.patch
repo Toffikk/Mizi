@@ -1,0 +1,20 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: =?UTF-8?q?Tofik=20=E2=99=A1?= <slodkitofiK@gmail.com>
+Date: Sat, 14 Dec 2024 19:44:44 +0100
+Subject: [PATCH] Lithium mixin direction (only half cuz of paper optimize
+ collisions patch)
+
+
+diff --git a/src/main/java/net/minecraft/core/Direction.java b/src/main/java/net/minecraft/core/Direction.java
+index 928f38fd6beb00753c92ae9f4678f7507519a39b..05083dca49dd0ef0fdf87b42a42a99383f0ef93e 100644
+--- a/src/main/java/net/minecraft/core/Direction.java
++++ b/src/main/java/net/minecraft/core/Direction.java
+@@ -350,7 +350,7 @@ public enum Direction implements StringRepresentable, ca.spottedleaf.moonrise.pa
+     }
+ 
+     public static Direction getRandom(RandomSource random) {
+-        return Util.getRandom(VALUES, random);
++        return VALUES[random.nextInt(VALUES.length)];
+     }
+ 
+     public static Direction getApproximateNearest(double x, double y, double z) {
