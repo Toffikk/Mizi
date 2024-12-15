@@ -1,7 +1,7 @@
 From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
 From: =?UTF-8?q?Tofik=20=E2=99=A1?= <slodkitofiK@gmail.com>
 Date: Sun, 15 Dec 2024 02:41:14 +0100
-Subject: [PATCH] Ridable minecarts and purpur config files
+Subject: [PATCH] Rideable minecarts and purpur config files
 
 
 diff --git a/src/main/java/net/minecraft/server/dedicated/DedicatedServer.java b/src/main/java/net/minecraft/server/dedicated/DedicatedServer.java
@@ -55,7 +55,7 @@ index b0d78bf8018a0ed509d5f3572a6342fcf0035a09..2a34f9c81b4b18d26387d2286d167b06
  
      public void onExplosionHit(@Nullable Entity entity) {}
 diff --git a/src/main/java/net/minecraft/world/entity/vehicle/AbstractMinecart.java b/src/main/java/net/minecraft/world/entity/vehicle/AbstractMinecart.java
-index cdc8606ffe5c75ee19d92e9f86f26b2a502d765e..5cbf40b9595c4cc4b9d8446562ebcfac9e01fcdc 100644
+index cdc8606ffe5c75ee19d92e9f86f26b2a502d765e..63120a09a64bdf8c5f42c27636aea62ea698c61b 100644
 --- a/src/main/java/net/minecraft/world/entity/vehicle/AbstractMinecart.java
 +++ b/src/main/java/net/minecraft/world/entity/vehicle/AbstractMinecart.java
 @@ -92,6 +92,10 @@ public abstract class AbstractMinecart extends VehicleEntity {
@@ -97,7 +97,7 @@ index cdc8606ffe5c75ee19d92e9f86f26b2a502d765e..5cbf40b9595c4cc4b9d8446562ebcfac
          // CraftBukkit start
          double prevX = this.getX();
          double prevY = this.getY();
-@@ -426,17 +442,60 @@ public abstract class AbstractMinecart extends VehicleEntity {
+@@ -426,17 +442,61 @@ public abstract class AbstractMinecart extends VehicleEntity {
          this.behavior.moveAlongTrack(world);
      }
  
@@ -128,14 +128,15 @@ index cdc8606ffe5c75ee19d92e9f86f26b2a502d765e..5cbf40b9595c4cc4b9d8446562ebcfac
 +        // Purpur start
 +        if (level().purpurConfig.minecartControllable && !isInWater() && !isInLava() && !passengers.isEmpty()) {
 +            Entity passenger = passengers.get(0);
-+            if (passenger instanceof Player) {
-+                Player player = (Player) passenger;
-+                if (player.jumping && this.onGround) {
++            if (passenger instanceof net.minecraft.server.level.ServerPlayer player) {
++                net.minecraft.world.entity.player.Input lastClientInput = player.getLastClientInput();
++                float forward = (lastClientInput.forward() == lastClientInput.backward() ? 0.0F : lastClientInput.forward() ? 1.0F : -1.0F);
++                if (lastClientInput.jump() && this.onGround) {
 +                    setDeltaMovement(new Vec3(getDeltaMovement().x, level().purpurConfig.minecartControllableHopBoost, getDeltaMovement().z));
 +                }
-+                if (player.zza != 0.0F) {
++                if (forward != 0.0F) {
 +                    Vector velocity = player.getBukkitEntity().getEyeLocation().getDirection().normalize().multiply(getControllableSpeed());
-+                    if (player.zza < 0.0) {
++                    if (forward < 0.0) {
 +                        velocity.multiply(-0.5);
 +                    }
 +                    setDeltaMovement(new Vec3(velocity.getX(), getDeltaMovement().y, velocity.getZ()));
